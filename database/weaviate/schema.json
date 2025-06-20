@@ -1,0 +1,56 @@
+{
+  "classes": [
+    {
+      "class": "Claim",
+      "description": "A statement or assertion that can be verified.",
+      "properties": [
+        {
+          "name": "text",
+          "dataType": ["text"],
+          "description": "The content of the claim."
+        },
+        {
+          "name": "veracity",
+          "dataType": ["string"],
+          "description": "The verified truthfulness of the claim (e.g., true, false, misleading)."
+        },
+        {
+          "name": "evidence",
+          "dataType": ["text"],
+          "description": "Supporting evidence for the claim's veracity."
+        },
+        {
+          "name": "source",
+          "dataType": ["string"],
+          "description": "The source from which the claim originates."
+        },
+        {
+          "name": "timestamp",
+          "dataType": ["date"],
+          "description": "The date and time when the claim was made."
+        }
+      ]
+    },
+    {
+      "class": "Summary",
+      "description": "A concise summary of claims and their veracity.",
+      "properties": [
+        {
+          "name": "claims",
+          "dataType": ["Claim"],
+          "description": "A list of claims included in the summary."
+        },
+        {
+          "name": "summaryText",
+          "dataType": ["text"],
+          "description": "The generated summary text."
+        },
+        {
+          "name": "createdAt",
+          "dataType": ["date"],
+          "description": "The date and time when the summary was created."
+        }
+      ]
+    }
+  ]
+}
