@@ -91,31 +91,28 @@ function App() {
       console.log('Transcription successful. Sending for full analysis...');
       setProcessingStatus('fact-checking');
 
+      // The key change is right here. We now expect a full JSON object directly.
       const factCheckResponse = await axios.post(`${backendUrl}/api/fact-check`, { transcript: transcript });
 
-      // --- THIS IS THE IMPROVED PART ---
-      const analysisResultString = factCheckResponse.data.analysis_result;
+      // --- THIS IS THE CORRECTED LOGIC ---
+      const responseData = factCheckResponse.data;
 
-      // 1. Check if the data we need actually exists
-      if (!analysisResultString) {
-        // If not, throw a clear, helpful error instead of crashing on JSON.parse
-        console.error("Backend response was missing the 'analysis_result' field.", factCheckResponse.data);
-        throw new Error("Received an unexpected response format from the server.");
+      // 1. Check if the object and its keys exist
+      if (!responseData || !responseData.overall_analysis || !responseData.fact_checks) {
+        console.error("Backend response was missing expected fields.", responseData);
+        throw new Error("Received an incomplete response format from the server.");
       }
 
-      // 2. Now it's safe to parse
-      const parsedData = JSON.parse(analysisResultString);
-      // --- END OF IMPROVED PART ---
-      
-      setFactChecks(parsedData.fact_checks);
-      setAnalysis(parsedData.overall_analysis);
+      // 2. Directly use the data. NO MORE JSON.parse()!
+      setFactChecks(responseData.fact_checks);
+      setAnalysis(responseData.overall_analysis);
+      // --- END OF CORRECTED LOGIC ---
       
       setProcessingStatus('done');
       console.log('Full analysis complete.');
 
     } catch (error) {
       console.error("An error occurred:", error);
-      // Our custom error from above will now be shown to the user
       const errorDetail = error.response?.data?.detail || error.message || 'An unknown error occurred.';
       setErrorMessage(`Error: ${errorDetail}`);
       setProcessingStatus('error');
