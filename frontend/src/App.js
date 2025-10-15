@@ -2,16 +2,24 @@
 
 import React, { useState } from 'react';
 import axios from 'axios';
+// NEW: Import an icon from our new library
+import { FiExternalLink } from 'react-icons/fi';
 import './App.css';
 
-// This component is the same as before
+// A simple spinner component
+const Spinner = () => <div className="spinner"></div>;
+
 const FactCheckCard = ({ claim, verdict, explanation, source }) => {
   const getVerdictClass = (v) => {
-    if (v.toLowerCase() === 'true') return 'verdict-true';
-    if (v.toLowerCase() === 'false') return 'verdict-false';
-    if (v.toLowerCase() === 'misleading') return 'verdict-misleading';
+    if (!v) return 'verdict-other';
+    const lowerV = v.toLowerCase();
+    if (lowerV === 'true') return 'verdict-true';
+    if (lowerV === 'false') return 'verdict-false';
+    if (lowerV === 'misleading') return 'verdict-misleading';
     return 'verdict-other';
   };
+
+  const isUrl = (str) => typeof str === 'string' && (str.startsWith('http://') || str.startsWith('https://'));
 
   return (
     <div className="fact-check-card">
@@ -24,7 +32,10 @@ const FactCheckCard = ({ claim, verdict, explanation, source }) => {
       <p>
         <strong>Source:</strong>{' '}
         {isUrl(source) ? (
-          <a href={source} target="_blank" rel="noopener noreferrer">Read more</a>
+          <a href={source} target="_blank" rel="noopener noreferrer" className="source-link">
+            <span>View Source</span>
+            <FiExternalLink />
+          </a>
         ) : (
           <span>{source}</span>
         )}
@@ -33,81 +44,58 @@ const FactCheckCard = ({ claim, verdict, explanation, source }) => {
   );
 };
 
-// NEW: A component to display the overall accuracy score
-const isUrl = (str) => {
-  // A simple check to see if the source is a URL
-  return str.startsWith('http://') || str.startsWith('https://');
-};
-
 const AnalysisSummary = ({ score, summary }) => {
-    const getScoreColor = (s) => {
-        if (s >= 75) return '#4caf50'; // Green
-        if (s >= 50) return '#ff9800'; // Orange
-        return '#f44336'; // Red
-    }
+  const getScoreColor = (s) => {
+    if (s >= 75) return 'var(--success-color)';
+    if (s >= 50) return 'var(--warning-color)';
+    return 'var(--danger-color)';
+  };
 
-    return (
-        <div className="analysis-summary">
-            <h3>Overall Accuracy</h3>
-            <div className="accuracy-score" style={{color: getScoreColor(score)}}>
-                {score}
-                <span className="score-suffix">/ 100</span>
-            </div>
-            <p className="summary-text">{summary}</p>
-        </div>
-    );
+  return (
+    <div className="analysis-summary">
+      <div className="accuracy-score" style={{ color: getScoreColor(score) }}>
+        {score}<span className="score-suffix">/ 100</span>
+      </div>
+      <p className="summary-text">{summary}</p>
+    </div>
+  );
 };
 
 function App() {
   const [videoUrl, setVideoUrl] = useState('');
   const [processingStatus, setProcessingStatus] = useState('idle');
   const [factChecks, setFactChecks] = useState([]);
-  const [analysis, setAnalysis] = useState(null); // NEW: State for the summary
+  const [analysis, setAnalysis] = useState(null);
   const [errorMessage, setErrorMessage] = useState('');
 
   const handleFactCheck = async () => {
+    // ... (This entire function's logic remains exactly the same as the last working version)
     if (!videoUrl) {
       setErrorMessage('Please enter a YouTube URL.');
       return;
     }
-
     setProcessingStatus('transcribing');
     setFactChecks([]);
     setAnalysis(null);
     setErrorMessage('');
-
     const backendUrl = 'http://localhost:8000';
-
     try {
       console.log('Sending URL for transcription...');
       const transcribeResponse = await axios.post(`${backendUrl}/api/transcribe`, { video_url: videoUrl });
       const { transcript } = transcribeResponse.data;
-
       if (!transcript) throw new Error("Transcription failed.");
-      
       console.log('Transcription successful. Sending for full analysis...');
       setProcessingStatus('fact-checking');
-
-      // The key change is right here. We now expect a full JSON object directly.
       const factCheckResponse = await axios.post(`${backendUrl}/api/fact-check`, { transcript: transcript });
-
-      // --- THIS IS THE CORRECTED LOGIC ---
       const responseData = factCheckResponse.data;
-
-      // 1. Check if the object and its keys exist
       if (!responseData || !responseData.overall_analysis || !responseData.fact_checks) {
         console.error("Backend response was missing expected fields.", responseData);
         throw new Error("Received an incomplete response format from the server.");
       }
-
-      // 2. Directly use the data. NO MORE JSON.parse()!
       setFactChecks(responseData.fact_checks);
       setAnalysis(responseData.overall_analysis);
-      // --- END OF CORRECTED LOGIC ---
-      
       setProcessingStatus('done');
       console.log('Full analysis complete.');
-
     } catch (error) {
       console.error("An error occurred:", error);
       const errorDetail = error.response?.data?.detail || error.message || 'An unknown error occurred.';
@@ -116,40 +104,46 @@ function App() {
     }
   };
 
+  const isProcessing = processingStatus === 'transcribing' || processingStatus === 'fact-checking';
+
   return (
     <div className="App">
-      <header className="App-header">
+      <header className="header">
         <h1>AI Video Fact-Checker</h1>
-        <p>Enter a YouTube video URL to analyze its claims.</p>
+        <p>Harnessing generative AI and real-time search to verify information and combat misinformation.</p>
       </header>
-      <main>
+
+      <main className="container">
         <div className="input-container">
           <input
             type="text"
             value={videoUrl}
             onChange={(e) => setVideoUrl(e.target.value)}
-            placeholder="e.g., https://www.youtube.com/watch?v=..."
-            disabled={processingStatus !== 'idle' && processingStatus !== 'done' && processingStatus !== 'error'}
+            placeholder="Paste a YouTube URL here..."
+            disabled={isProcessing}
           />
-          <button 
-            onClick={handleFactCheck}
-            disabled={processingStatus !== 'idle' && processingStatus !== 'done' && processingStatus !== 'error'}
-          >
-            Fact-Check Video
+          <button onClick={handleFactCheck} disabled={isProcessing}>
+            {isProcessing ? 'Analyzing...' : 'Verify Video'}
           </button>
         </div>
 
         <div className="status-container">
-          {processingStatus === 'transcribing' && <p>Step 1/2: Transcribing video... (this may take a moment)</p>}
-          {processingStatus === 'fact-checking' && <p>Step 2/2: Analyzing transcript and finding sources...</p>}
+          {isProcessing && (
+            <>
+              <Spinner />
+              <p>
+                {processingStatus === 'transcribing'
+                  ? 'Step 1/2: Transcribing video...'
+                  : 'Step 2/2: Verifying claims with sources...'}
+              </p>
+            </>
+          )}
           {processingStatus === 'error' && <p className="error-message">{errorMessage}</p>}
         </div>
 
         <div className="results-container">
-          {/* NEW: Render the summary component when data is ready */}
           {analysis && <AnalysisSummary score={analysis.score} summary={analysis.summary} />}
-
-          {factChecks.length > 0 && <h2>Detailed Claims</h2>}
+          {factChecks.length > 0 && <h2>Detailed Analysis</h2>}
           {factChecks.map((check, index) => (
             <FactCheckCard key={index} {...check} />
           ))}
