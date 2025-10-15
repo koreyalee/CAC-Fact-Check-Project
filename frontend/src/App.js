@@ -22,9 +22,6 @@ const FactCheckCard = ({ claim, verdict, explanation, source }) => {
       </div>
       <p><strong>Explanation:</strong> {explanation}</p>
       <p>
-        <strong>Source:</strong> <a href={source} target="_blank" rel="noopener noreferrer">Read more</a>
-      </p>
-      <p>
         <strong>Source:</strong>{' '}
         {isUrl(source) ? (
           <a href={source} target="_blank" rel="noopener noreferrer">Read more</a>

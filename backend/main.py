@@ -99,18 +99,18 @@ async def transcribe_video(request: VideoRequest):
                 os.remove(file_path)
 
 
+# In backend/main.py, replace the entire function
+
 @app.post("/api/fact-check")
 async def fact_check_transcript(request: FactCheckRequest):
     transcript = request.transcript
     
-    # --- STEP 1: Use Gemini to IDENTIFY the claims ---
+    # --- STEP 1: Identify claims (this part is unchanged) ---
     claim_identification_prompt = f"""
     Analyze the following transcript and identify the 3 to 5 most significant, verifiable factual claims.
-    Return your response as a simple JSON array of strings. Do not include explanations or any other fields.
-    Example format: ["Claim one.", "Claim two.", "Claim three."]
+    Return your response as a simple JSON array of strings. Example: ["Claim one.", "Claim two."].
     Transcript: --- {transcript} ---
     """
-    
     try:
         print("Step 1: Identifying claims with Gemini...")
         response = gemini_model.generate_content(claim_identification_prompt)
@@ -118,70 +118,91 @@ async def fact_check_transcript(request: FactCheckRequest):
         claims = json.loads(cleaned_text)
     except Exception as e:
         print(f"Error identifying claims: {e}")
-        raise HTTPException(status_code=500, detail="Failed to identify claims from the transcript.")
+        raise HTTPException(status_code=500, detail="Failed to identify claims from transcript.")
 
-    # --- STEP 2: Verify EACH claim using Search API + Gemini ---
+    # --- UPGRADE #1: Define our list of reputable sources ---
+    REPUTABLE_SITES = [
+        "reuters.com", "apnews.com", "bbc.com", "npr.org", "pbs.org",
+        "nytimes.com", "wsj.com", "washingtonpost.com", "theguardian.com",
+        "factcheck.org", "politifact.com", "snopes.com",
+        "*.gov", "*.edu" # Use wildcards for any government or educational institution
+    ]
+    # --- End of Upgrade #1 ---
+
     verified_claims = []
     for claim in claims:
+        # --- UPGRADE #2: Build a powerful, site-restricted search query ---
+        site_query = " OR ".join([f"site:{site}" for site in REPUTABLE_SITES])
+        search_query = f"{claim} {site_query}"
+        # --- End of Upgrade #2 ---
+
         results = None
-        
-        # --- Caching Logic ---
-        if claim in search_cache:
+        if claim in search_cache and search_cache[claim].get("query") == search_query:
             print(f"CACHE HIT for claim: '{claim}'")
-            results = search_cache[claim]
+            results = search_cache[claim]["data"]
         else:
-            print(f"CACHE MISS for claim: '{claim}'. Calling SerpApi...")
+            print(f"CACHE MISS for claim: '{claim}'. Calling SerpApi with restricted search...")
             try:
-                search_params = { "q": claim, "api_key": SERPAPI_API_KEY, "engine": "google" }
+                search_params = { "q": search_query, "api_key": SERPAPI_API_KEY, "engine": "google" }
                 search = GoogleSearch(search_params)
                 results = search.get_dict()
-                search_cache[claim] = results
+                # Also cache the query used, so we don't get a false hit if the sites change
+                search_cache[claim] = {"query": search_query, "data": results}
             except Exception as e:
                 print(f"Error calling SerpApi: {e}")
                 results = {}
         
         organic_results = results.get("organic_results", [])
-        top_source_url = "No verifiable source found."
-        source_context = "No verifiable source found."
+        top_source_url = "No reputable source found."
+        source_context = "No reputable source found among trusted domains."
 
         if organic_results:
             top_result = organic_results[0]
             top_source_url = top_result.get("link")
             snippet = top_result.get("snippet", "")
             source_context = f"Source URL: {top_source_url}\nSource Snippet: {snippet}"
-            print(f"Found source: {top_source_url}")
+            print(f"Found reputable source: {top_source_url}")
         else:
-            print("No search results found for the claim.")
+            print("No reputable search results found for the claim.")
 
-        # --- Use Gemini AGAIN with context ---
+        # Verification step remains the same, but now uses better context
         verification_prompt = f"""
         You are a fact-checker. Determine the verdict for the claim based ONLY on the provided source context.
         Claim: "{claim}"
         Source Context: --- {source_context} ---
         Provide a verdict ("True", "False", or "Misleading") and a brief, neutral explanation (1-2 sentences).
-        Format your response as a JSON object with keys "verdict" and "explanation".
+        Format as a JSON object with keys "verdict" and "explanation".
         """
-        
-        print(f"Step 2b: Verifying claim with context...")
         try:
+            print(f"Verifying claim with context...")
             verification_response = gemini_model.generate_content(verification_prompt)
             verification_data = json.loads(verification_response.text.strip().replace("```json", "").replace("```", "").strip())
             verified_claims.append({ "claim": claim, "verdict": verification_data.get("verdict", "Uncertain"), "explanation": verification_data.get("explanation", "Could not determine verdict from source."), "source": top_source_url })
         except Exception as e:
             print(f"Error during claim verification: {e}")
-            verified_claims.append({ "claim": claim, "verdict": "Uncertain", "explanation": "An error occurred during AI verification.", "source": top_source_url })
+            verified_claims.append({ "claim": claim, "verdict": "Uncertain", "explanation": "Error during AI verification.", "source": top_source_url })
 
-    # --- STEP 3: Final Analysis (Overall Score) ---
-    print("Step 3: Generating final analysis...")
+    # --- UPGRADE #3: A more sophisticated final analysis prompt ---
+    print("Step 3: Generating final, nuanced analysis...")
     results_summary_for_ai = json.dumps(verified_claims, indent=2)
     final_analysis_prompt = f"""
-    Given the following fact-check results, determine an overall accuracy score from 0 to 100 and a one-sentence summary.
+    You are a discerning media analyst. Based on the following list of fact-checked claims, provide a holistic analysis of the video's reliability.
+
+    Consider these factors:
+    - **Significance:** Are the true claims minor details while the false claims are central to the video's main argument?
+    - **Severity:** Is a "False" claim a simple mistake or a harmful piece of misinformation?
+    - **Context:** Does the video use technically true facts to paint a misleading overall picture?
+
+    Provide an overall accuracy score (0-100) that reflects this nuanced analysis, not just a simple average. Also, write a one-sentence summary explaining your reasoning.
     Return your response as a JSON object with keys "score" and "summary".
-    Fact-Check Results: {results_summary_for_ai}
+
+    Fact-Check Results:
+    {results_summary_for_ai}
     """
+    # --- End of Upgrade #3 ---
+
     final_analysis_response = gemini_model.generate_content(final_analysis_prompt)
     final_analysis = json.loads(final_analysis_response.text.strip().replace("```json", "").replace("```", "").strip())
 
-    # --- Combine and Return ---
     final_result = { "overall_analysis": final_analysis, "fact_checks": verified_claims }
     return final_result
