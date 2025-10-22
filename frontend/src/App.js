@@ -78,7 +78,7 @@ function App() {
     setFactChecks([]);
     setAnalysis(null);
     setErrorMessage('');
-    const backendUrl = 'http://localhost:8000';
+    const backendUrl = '';
     try {
       console.log('Sending URL for transcription...');
       const transcribeResponse = await axios.post(`${backendUrl}/api/transcribe`, { video_url: videoUrl });
